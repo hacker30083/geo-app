@@ -2,33 +2,152 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Geography Trainer</title>
+  <title>Guess the Country</title>
   <style>
-    body { font-family: Arial, sans-serif; text-align: center; }
-    #mapCanvas { border: 1px solid #aaa; cursor: crosshair; }
-    #controls { margin: 10px; }
-    #score { margin: 5px; font-size: 14px; }
-    #prompt { font-size: 16px; margin: 10px; }
-    .btn { margin: 4px; padding: 6px 12px; }
+    body { font-family: sans-serif; text-align: center; }
+    #map { width: 800px; height: 500px; border: 1px solid #333; margin: 10px auto; }
+    #answer { margin-top: 10px; font-weight: bold; }
+    #coordsBox { margin: 10px auto; padding: 10px; border: 1px dashed #333; display: none; }
+    canvas { background: #f0f0f0; }
   </style>
 </head>
 <body>
-  <h2>Geography Trainer</h2>
-  <canvas id="mapCanvas"></canvas>
-  <div id="prompt"></div>
-  <div id="score">Score: 0/0</div>
+  <h1>Guess the Country</h1>
+  <button onclick="startGame()">Start Game</button>
+  <button onclick="showAnswerKey()">Show Answer Key</button>
+  <button onclick="toggleFixMode()">Toggle Fix Mode</button>
+  <button onclick="downloadCoords()">Download Updated Coords</button>
+  <div id="map"><canvas id="canvas" width="800" height="500"></canvas></div>
+  <div id="answer"></div>
+  <div id="coordsBox"></div>
 
-  <div id="controls">
-    <label>Click Tolerance: 
-      <input type="range" id="tolerance" min="5" max="150" value="16">
-    </label><br>
-    <button class="btn" onclick="clearMarkers()">Clear markers</button>
-    <button class="btn" onclick="showAnswerKey()">Show answer key</button>
-    <button class="btn" onclick="startFixMode()">Fix answer position</button>
-    <button class="btn" onclick="startAgain()">Start Again</button>
-    <button class="btn" onclick="exportCoords()">Export coords.json</button>
-  </div>
+  <script>
+    let coords = {}; // loaded from coords.json
+    let countries = [];
+    let currentCountry = null;
+    let guesses = [];
+    let maxGuesses = 38;
+    let fixMode = false;
+    let tolerance = 30;
+    let gameOver = false;
 
-  <script src="trainer.js"></script>
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+
+    // auto-load coords.json
+    async function loadCoords() {
+      try {
+        const res = await fetch("coords.json");
+        coords = await res.json();
+        countries = Object.keys(coords);
+        console.log("Loaded coords.json:", coords);
+      } catch (e) {
+        console.error("Could not load coords.json", e);
+      }
+    }
+
+    function startGame() {
+      guesses = [];
+      gameOver = false;
+      document.getElementById("answer").textContent = "";
+      clearCanvas();
+      pickCountry();
+    }
+
+    function clearCanvas() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    function pickCountry() {
+      if (guesses.length >= maxGuesses) {
+        gameOver = true;
+        document.getElementById("answer").textContent = "You've finished all guesses!";
+        return;
+      }
+      const unused = countries.filter(c => !guesses.includes(c));
+      if (unused.length === 0) {
+        gameOver = true;
+        document.getElementById("answer").textContent = "All countries done!";
+        return;
+      }
+      currentCountry = unused[Math.floor(Math.random() * unused.length)];
+      document.getElementById("answer").textContent = "Find: " + currentCountry;
+    }
+
+    canvas.addEventListener("click", e => {
+      if (gameOver) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      if (fixMode && currentCountry) {
+        coords[currentCountry] = [x, y];
+        drawMarker(x, y, "blue");
+        guesses.push(currentCountry);
+        pickCountry();
+        return;
+      }
+
+      if (!currentCountry) return;
+      const [cx, cy] = coords[currentCountry] || [null, null];
+      if (cx === null) return;
+
+      const dist = Math.hypot(x - cx, y - cy);
+      if (dist <= tolerance) {
+        drawMarker(cx, cy, "green");
+        guesses.push(currentCountry);
+        pickCountry();
+      } else {
+        drawMarker(x, y, "red");
+      }
+    });
+
+    function drawMarker(x, y, color) {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(x, y, 6, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+
+    function showAnswerKey() {
+      clearCanvas();
+      for (const [country, [x, y]] of Object.entries(coords)) {
+        ctx.strokeStyle = "gray";
+        ctx.beginPath();
+        ctx.arc(x, y, tolerance, 0, 2 * Math.PI);
+        ctx.stroke();
+        ctx.fillStyle = "black";
+        ctx.fillText(country, x + 5, y - 5);
+        ctx.fillStyle = "blue";
+        ctx.beginPath();
+        ctx.arc(x, y, 4, 0, 2 * Math.PI);
+        ctx.fill();
+      }
+    }
+
+    function toggleFixMode() {
+      fixMode = !fixMode;
+      document.getElementById("coordsBox").style.display = fixMode ? "block" : "none";
+      if (fixMode) {
+        document.getElementById("coordsBox").innerHTML =
+          `<h3>Fix Mode Active</h3>
+           <p>Click to set new coords for the current country.</p>
+           <label>Tolerance: <input type="number" value="${tolerance}" onchange="tolerance=this.valueAsNumber"></label>`;
+      }
+    }
+
+    function downloadCoords() {
+      const blob = new Blob([JSON.stringify(coords, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "coords.json";
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    // auto-load on page open
+    loadCoords();
+  </script>
 </body>
 </html>
