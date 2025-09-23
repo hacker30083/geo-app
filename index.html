@@ -2,138 +2,132 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Guess the Country</title>
+  <title>Geography Trainer</title>
   <style>
     body { font-family: sans-serif; text-align: center; }
     #map { width: 800px; height: 500px; border: 1px solid #333; margin: 10px auto; }
-    #answer { margin-top: 10px; font-weight: bold; }
-    #coordsBox { margin: 10px auto; padding: 10px; border: 1px dashed #333; display: none; }
-    canvas { background: #f0f0f0; }
+    canvas { background: #fff; }
+    #controls { margin-top: 10px; }
+    #answer { font-weight: bold; margin-top: 10px; }
   </style>
 </head>
 <body>
-  <h1>Guess the Country</h1>
+  <h1>Geography Trainer</h1>
   <button onclick="startGame()">Start Game</button>
-  <button onclick="showAnswerKey()">Show Answer Key</button>
-  <button onclick="toggleFixMode()">Toggle Fix Mode</button>
-  <button onclick="downloadCoords()">Download Updated Coords</button>
+  <button onclick="restartGame()">Restart</button>
+  <button onclick="downloadCoords()">Download Coords</button>
+
   <div id="map"><canvas id="canvas" width="800" height="500"></canvas></div>
+
+  <div id="controls" style="display:none;">
+    <label for="guess">Which location is this?</label>
+    <select id="guess"></select>
+    <button onclick="submitGuess()">Submit</button>
+  </div>
+
   <div id="answer"></div>
-  <div id="coordsBox"></div>
 
   <script>
-    let coords = {}; // loaded from coords.json
+    let coords = {};
     let countries = [];
     let currentCountry = null;
     let guesses = [];
     let maxGuesses = 38;
-    let fixMode = false;
-    let tolerance = 30;
     let gameOver = false;
 
     const canvas = document.getElementById("canvas");
     const ctx = canvas.getContext("2d");
+    const mapImage = new Image();
+    mapImage.src = "map.png"; // put your map file here
 
-    // auto-load coords.json
+    mapImage.onload = () => drawMap();
+
     async function loadCoords() {
       try {
         const res = await fetch("coords.json");
         coords = await res.json();
         countries = Object.keys(coords);
         console.log("Loaded coords.json:", coords);
+
+        // populate dropdown
+        const sel = document.getElementById("guess");
+        sel.innerHTML = "";
+        for (const c of countries) {
+          const opt = document.createElement("option");
+          opt.value = c;
+          opt.textContent = c;
+          sel.appendChild(opt);
+        }
       } catch (e) {
         console.error("Could not load coords.json", e);
       }
+    }
+
+    function drawMap() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(mapImage, 0, 0, canvas.width, canvas.height);
     }
 
     function startGame() {
       guesses = [];
       gameOver = false;
       document.getElementById("answer").textContent = "";
-      clearCanvas();
+      document.getElementById("controls").style.display = "block";
+      drawMap();
       pickCountry();
     }
 
-    function clearCanvas() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    function restartGame() {
+      startGame();
     }
 
     function pickCountry() {
       if (guesses.length >= maxGuesses) {
         gameOver = true;
         document.getElementById("answer").textContent = "You've finished all guesses!";
+        document.getElementById("controls").style.display = "none";
         return;
       }
       const unused = countries.filter(c => !guesses.includes(c));
       if (unused.length === 0) {
         gameOver = true;
-        document.getElementById("answer").textContent = "All countries done!";
+        document.getElementById("answer").textContent = "All locations done!";
+        document.getElementById("controls").style.display = "none";
         return;
       }
       currentCountry = unused[Math.floor(Math.random() * unused.length)];
-      document.getElementById("answer").textContent = "Find: " + currentCountry;
+      drawMap();
+      const [x, y] = coords[currentCountry];
+      drawMarker(x, y, "blue"); // show marker
+      document.getElementById("answer").textContent = "What is this location?";
     }
 
-    canvas.addEventListener("click", e => {
-      if (gameOver) return;
-      const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
+    function submitGuess() {
+      if (!currentCountry || gameOver) return;
+      const sel = document.getElementById("guess");
+      const guess = sel.value;
 
-      if (fixMode && currentCountry) {
-        coords[currentCountry] = [x, y];
-        drawMarker(x, y, "blue");
-        guesses.push(currentCountry);
-        pickCountry();
-        return;
-      }
-
-      if (!currentCountry) return;
-      const [cx, cy] = coords[currentCountry] || [null, null];
-      if (cx === null) return;
-
-      const dist = Math.hypot(x - cx, y - cy);
-      if (dist <= tolerance) {
-        drawMarker(cx, cy, "green");
-        guesses.push(currentCountry);
-        pickCountry();
+      const [x, y] = coords[currentCountry];
+      if (guess === currentCountry) {
+        drawMap();
+        drawMarker(x, y, "green");
+        document.getElementById("answer").textContent = "Correct! It was " + currentCountry;
       } else {
+        drawMap();
         drawMarker(x, y, "red");
+        document.getElementById("answer").textContent = "Wrong! It was " + currentCountry;
       }
-    });
+      guesses.push(currentCountry);
+
+      setTimeout(pickCountry, 1500);
+    }
 
     function drawMarker(x, y, color) {
+      ctx.drawImage(mapImage, 0, 0, canvas.width, canvas.height);
       ctx.fillStyle = color;
       ctx.beginPath();
-      ctx.arc(x, y, 6, 0, 2 * Math.PI);
+      ctx.arc(x, y, 8, 0, 2 * Math.PI);
       ctx.fill();
-    }
-
-    function showAnswerKey() {
-      clearCanvas();
-      for (const [country, [x, y]] of Object.entries(coords)) {
-        ctx.strokeStyle = "gray";
-        ctx.beginPath();
-        ctx.arc(x, y, tolerance, 0, 2 * Math.PI);
-        ctx.stroke();
-        ctx.fillStyle = "black";
-        ctx.fillText(country, x + 5, y - 5);
-        ctx.fillStyle = "blue";
-        ctx.beginPath();
-        ctx.arc(x, y, 4, 0, 2 * Math.PI);
-        ctx.fill();
-      }
-    }
-
-    function toggleFixMode() {
-      fixMode = !fixMode;
-      document.getElementById("coordsBox").style.display = fixMode ? "block" : "none";
-      if (fixMode) {
-        document.getElementById("coordsBox").innerHTML =
-          `<h3>Fix Mode Active</h3>
-           <p>Click to set new coords for the current country.</p>
-           <label>Tolerance: <input type="number" value="${tolerance}" onchange="tolerance=this.valueAsNumber"></label>`;
-      }
     }
 
     function downloadCoords() {
@@ -146,7 +140,6 @@
       URL.revokeObjectURL(url);
     }
 
-    // auto-load on page open
     loadCoords();
   </script>
 </body>
