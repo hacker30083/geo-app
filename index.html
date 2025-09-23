@@ -4,183 +4,147 @@
   <meta charset="UTF-8">
   <title>Geography Trainer</title>
   <style>
-    body { font-family: sans-serif; text-align: center; }
-    #map { width: 800px; height: 500px; border: 1px solid #333; margin: 10px auto; }
-    canvas { background: #fff; }
+    body { font-family: Arial, sans-serif; text-align: center; }
+    #mapCanvas { border: 1px solid #333; display: block; margin: 0 auto; }
     #controls { margin-top: 10px; }
-    #answer { font-weight: bold; margin-top: 10px; }
   </style>
 </head>
 <body>
   <h1>Geography Trainer</h1>
-  <button onclick="startGame()">Start Game</button>
-  <button onclick="restartGame()">Restart</button>
-  <button onclick="downloadCoords()">Download Coords</button>
-
-  <div id="map"><canvas id="canvas" width="800" height="500"></canvas></div>
-
-  <div id="controls" style="display:none;">
-    <label for="guess">Which location is this?</label>
-    <select id="guess"></select>
-    <button onclick="submitGuess()">Submit</button>
+  <canvas id="mapCanvas"></canvas>
+  <div id="controls">
+    <label for="answerSelect">What is shown?</label>
+    <select id="answerSelect"></select>
+    <button id="submitBtn">Submit</button>
+    <p id="score">Score: 0/0</p>
   </div>
 
-  <div id="answer"></div>
-
   <script>
-    let coords = {};
+    // === Locations list ===
     const locations = [
-  "Ida-Euroopa lauskmaa",
-  "Suur Hiina tasandik",
-  "Kesktasandik",
-  "Suur Tasandik (USA)",
-  "Kaspia alamik",
-  "Surnumere nõgu",
-  "Amazonase",
-  "Lääne-Siberi",
-  "Mississippi",
-  "Induse-Gangese",
-  "Iraani kiltmaa",
-  "Tiibeti kiltmaa",
-  "Mehhiko kiltmaa",
-  "Dekkani kiltmaa",
-  "Kesk-Siberi kiltmaa",
-  "Kordiljeerid",
-  "Andid",
-  "Kaljumäestik",
-  "Apalatšid",
-  "Draakonimäed",
-  "Atlase mäestik",
-  "Austraalia alpid",
-  "Suur Veelahkmeahelik",
-  "Himaalaja",
-  "Suur Kaukasus",
-  "Uurali mäestik",
-  "Karpaadid",
-  "Apenniini mäestik",
-  "Püreneed",
-  "Skandinaavia",
-  "Alpid",
-  "Tian Shan",
-  "Altai",
-  "Verhojanski mäestik",
-  "Guajaana mägismaa",
-  "Etioopia mägismaa",
-  "Brasiilia mägismaa",
-  "Patagoonia"
-];
+      "Ida-Euroopa lauskmaa",
+      "Suur Hiina tasandik",
+      "Kesktasandik",
+      "Suur Tasandik (USA)",
+      "Kaspia alamik",
+      "Surnumere nõgu",
+      "Amazonase",
+      "Lääne-Siberi",
+      "Mississippi",
+      "Induse-Gangese",
+      "Iraani kiltmaa",
+      "Tiibeti kiltmaa",
+      "Mehhiko kiltmaa",
+      "Dekkani kiltmaa",
+      "Kesk-Siberi kiltmaa",
+      "Kordiljeerid",
+      "Andid",
+      "Kaljumäestik",
+      "Apalatšid",
+      "Draakonimäed",
+      "Atlase mäestik",
+      "Austraalia alpid",
+      "Suur Veelahkmeahelik",
+      "Himaalaja",
+      "Suur Kaukasus",
+      "Uurali mäestik",
+      "Karpaadid",
+      "Apenniini mäestik",
+      "Püreneed",
+      "Skandinaavia",
+      "Alpid",
+      "Tian Shan",
+      "Altai",
+      "Verhojanski mäestik",
+      "Guajaana mägismaa",
+      "Etioopia mägismaa",
+      "Brasiilia mägismaa",
+      "Patagoonia"
+    ];
 
-    let currentCountry = null;
-    let guesses = [];
-    let maxGuesses = 38;
-    let gameOver = false;
+    // === State ===
+    let coords = {};
+    let remaining = [];
+    let current = null;
+    let score = 0, total = 0;
 
-    const canvas = document.getElementById("canvas");
+    const canvas = document.getElementById("mapCanvas");
     const ctx = canvas.getContext("2d");
+    const answerSelect = document.getElementById("answerSelect");
+    const submitBtn = document.getElementById("submitBtn");
+    const scoreLabel = document.getElementById("score");
+
+    // Populate dropdown
+    locations.forEach((loc, i) => {
+      const opt = document.createElement("option");
+      opt.value = i + 1; // index matches coords.json numbering
+      opt.textContent = loc;
+      answerSelect.appendChild(opt);
+    });
+
+    // Load map and coords.json
     const mapImage = new Image();
-    mapImage.src = "map.png"; // put your map file here
+    mapImage.src = "map.png"; // must exist in same folder
+    mapImage.onload = () => {
+      canvas.width = mapImage.width;
+      canvas.height = mapImage.height;
+      ctx.drawImage(mapImage, 0, 0);
+    };
 
-    mapImage.onload = () => drawMap();
+    fetch("coords.json")
+      .then(r => r.json())
+      .then(data => {
+        coords = data;
+        resetQuiz();
+      });
 
-    async function loadCoords() {
-      try {
-        const res = await fetch("coords.json");
-        coords = await res.json();
-        countries = Object.keys(coords);
-        console.log("Loaded coords.json:", coords);
-
-        // populate dropdown
-        const sel = document.getElementById("guess");
-        sel.innerHTML = "";
-        for (const c of countries) {
-          const opt = document.createElement("option");
-          opt.value = c;
-          opt.textContent = c;
-          sel.appendChild(opt);
-        }
-      } catch (e) {
-        console.error("Could not load coords.json", e);
-      }
+    function resetQuiz() {
+      remaining = Object.keys(coords).map(n => parseInt(n));
+      score = 0;
+      total = 0;
+      scoreLabel.textContent = `Score: ${score}/${total}`;
+      nextQuestion();
     }
 
-    function drawMap() {
+    function nextQuestion() {
+      if (remaining.length === 0) {
+        alert(`Done! Final Score: ${score}/${total}`);
+        return;
+      }
+      const idx = Math.floor(Math.random() * remaining.length);
+      current = remaining.splice(idx, 1)[0]; // remove chosen
+      // Draw map fresh
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(mapImage, 0, 0, canvas.width, canvas.height);
-    }
-
-    function startGame() {
-      guesses = [];
-      gameOver = false;
-      document.getElementById("answer").textContent = "";
-      document.getElementById("controls").style.display = "block";
-      drawMap();
-      pickCountry();
-    }
-
-    function restartGame() {
-      startGame();
-    }
-
-    function pickCountry() {
-      if (guesses.length >= maxGuesses) {
-        gameOver = true;
-        document.getElementById("answer").textContent = "You've finished all guesses!";
-        document.getElementById("controls").style.display = "none";
-        return;
-      }
-      const unused = countries.filter(c => !guesses.includes(c));
-      if (unused.length === 0) {
-        gameOver = true;
-        document.getElementById("answer").textContent = "All locations done!";
-        document.getElementById("controls").style.display = "none";
-        return;
-      }
-      currentCountry = unused[Math.floor(Math.random() * unused.length)];
-      drawMap();
-      const [x, y] = coords[currentCountry];
-      drawMarker(x, y, "blue"); // show marker
-      document.getElementById("answer").textContent = "What is this location?";
-    }
-
-    function submitGuess() {
-      if (!currentCountry || gameOver) return;
-      const sel = document.getElementById("guess");
-      const guess = sel.value;
-
-      const [x, y] = coords[currentCountry];
-      if (guess === currentCountry) {
-        drawMap();
-        drawMarker(x, y, "green");
-        document.getElementById("answer").textContent = "Correct! It was " + currentCountry;
-      } else {
-        drawMap();
-        drawMarker(x, y, "red");
-        document.getElementById("answer").textContent = "Wrong! It was " + currentCountry;
-      }
-      guesses.push(currentCountry);
-
-      setTimeout(pickCountry, 1500);
-    }
-
-    function drawMarker(x, y, color) {
-      ctx.drawImage(mapImage, 0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = color;
+      ctx.drawImage(mapImage, 0, 0);
+      // Highlight the spot to guess
+      const [x, y] = coords[current];
       ctx.beginPath();
-      ctx.arc(x, y, 8, 0, 2 * Math.PI);
-      ctx.fill();
+      ctx.arc(x, y, 10, 0, 2 * Math.PI);
+      ctx.strokeStyle = "orange";
+      ctx.lineWidth = 2;
+      ctx.stroke();
     }
 
-    function downloadCoords() {
-      const blob = new Blob([JSON.stringify(coords, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "coords.json";
-      a.click();
-      URL.revokeObjectURL(url);
-    }
-
-    loadCoords();
+    submitBtn.addEventListener("click", () => {
+      if (current === null) return;
+      total++;
+      const chosen = parseInt(answerSelect.value);
+      if (chosen === current) {
+        score++;
+        ctx.fillStyle = "green";
+        ctx.beginPath();
+        ctx.arc(...coords[current], 8, 0, 2 * Math.PI);
+        ctx.fill();
+      } else {
+        // Wrong: red mark
+        ctx.fillStyle = "red";
+        ctx.beginPath();
+        ctx.arc(...coords[current], 8, 0, 2 * Math.PI);
+        ctx.fill();
+      }
+      scoreLabel.textContent = `Score: ${score}/${total}`;
+      setTimeout(nextQuestion, 800);
+    });
   </script>
 </body>
 </html>
